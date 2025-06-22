@@ -1,0 +1,81 @@
+# .goreleaser.yml
+# This is a configuration file for GoReleaser.
+# See https://goreleaser.com/customization/ for more options.
+
+# The 'before' hook allows you to run commands before the build process.
+before:
+  hooks:
+    # Ensure all dependencies are tidy.
+    - go mod tidy
+
+# 'builds' section defines how to build your application for different platforms.
+builds:
+  - # We are building for Linux on both amd64 and arm64.
+    id: "dirstats-cli"
+    # The main entry point of your application.
+    main: ./cmd/dirstats
+    # The name of the binary file.
+    binary: dirstats
+    # Specify target environments.
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+# 'archives' section is not needed if we are only creating packages like .deb.
+# GoReleaser handles this implicitly.
+
+# 'checksum' section configures the generation of a checksums file.
+checksum:
+  # The name of the checksums file.
+  name_template: 'checksums.txt'
+
+# 'snapshot' section configures behavior for non-tag builds (e.g., on main branch).
+snapshot:
+  # This creates a "-SNAPSHOT" version for development builds.
+  name_template: "{{ incpatch .Version }}-next"
+
+# 'changelog' section configures how the release notes are generated.
+changelog:
+  # Skips generation if there are no conventional commit messages.
+  skip: true
+
+# 'nfpms' section is the core for creating Linux packages like .deb and .rpm.
+nfpms:
+  - # Unique ID for this package configuration.
+    id: dirstats-deb
+    # The name of the final package file.
+    package_name: dirstats-cli
+    # The build ID this package is based on.
+    builds:
+      - dirstats-cli
+    # Specify package formats. We want .deb.
+    formats:
+      - deb
+    # The vendor of the package.
+    vendor: "Your Name or Company"
+    # A short description of the package.
+    description: "A command-line tool to display directory statistics."
+    # The project's homepage URL.
+    homepage: "https://github.com/free2028/dss" # <-- TODO: Change this
+    # The maintainer's contact information.
+    maintainer: "free2028" # <-- TODO: Change this
+    # The license of the package.
+    license: "MIT" # Or your project's license
+    # Where the binary will be installed on the user's system.
+    contents:
+      - src: ./dirstats-cli
+        dst: /usr/local/bin/dirstats
+    # GoReleaser automatically maps Go architecture names to Debian architecture names.
+    # e.g., 'amd64' -> 'amd64', 'arm64' -> 'arm64'.
+    # Debian architecture mapping can be customized if needed.
+    deb:
+    # Optional: you can specify dependencies here if your app needs them.
+    # depends:
+    #   - libc6
+    # You can also add custom scripts to run during installation/uninstallation.
+    # scripts:
+    #   postinstall: "scripts/postinstall.sh"
