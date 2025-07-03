@@ -46,7 +46,7 @@ jobs:
           go build -ldflags="-w -s" -o dss-${{ matrix.suffix }} ./cmd/dirstats
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: dss-${{ matrix.suffix }}
           path: dss-${{ matrix.suffix }}
