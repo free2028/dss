@@ -2,43 +2,42 @@ name: Go Build
 
 on:
   push:
-    branches: ["main"]   # 触发分支
+    branches: ["main"]
   pull_request:
     branches: ["main"]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-arch: ["amd64", "arm64"]  # 定义目标架构
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4     # 检出代码
+        uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v5     # 安装 Go 环境
+        uses: actions/setup-go@v5
         with:
-          go-version: "1.21"          # 指定 Go 版本
+          go-version: "1.21"  # 替换为你的 Go 版本
 
       - name: Cache Dependencies
-        uses: actions/cache@v3        # 缓存 Go 模块加速构建
+        uses: actions/cache@v3
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
 
-      - name: Build
-        env:
-          GOOS: linux                 # 目标系统：Linux
-          GOARCH: ${{ matrix.go-arch }}  # 从矩阵中获取架构
+      - name: Create Output Directory
+        run: mkdir -p bin  # 确保 bin 目录存在
+
+      - name: Build Binaries
         run: |
-          # 编译并指定输出文件名（示例：myapp-linux-amd64）
-          go build -o "bin/dirstats-linux-${{ matrix.go-arch }}" ./cmd/dirstats/main.go
+          # 循环编译 amd64 和 arm64
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH=$arch go build -o "bin/dirstats-linux-$arch" ./cmd/dirstats/main.go
+          done
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4  # 上传可执行文件
+        uses: actions/upload-artifact@v4
         with:
-          name: executables
+          name: dirstats-binaries  # 单个 Artifact 包含所有架构文件
           path: bin/*
