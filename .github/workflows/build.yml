@@ -35,7 +35,7 @@ jobs:
           GOARCH: ${{ matrix.go-arch }}  # 从矩阵中获取架构
         run: |
           # 编译并指定输出文件名（示例：myapp-linux-amd64）
-          go build -o cmd/dirstats/dss-linux-${{ matrix.go-arch }} ./...
+          go build -o "bin/dirstats-linux-${{ matrix.go-arch }}" ./cmd/dirstats/main.go
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4  # 上传可执行文件
