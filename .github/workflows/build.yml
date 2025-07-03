@@ -1,4 +1,4 @@
-name: Go Build
+name: Go Build and Release
 
 on:
   push:
@@ -7,9 +7,55 @@ on:
   pull_request:
     branches: ["main"]
 
+env:
+  CGO_ENABLED: 0
+
 jobs:
+  setup-environment:
+    runs-on: ubuntu-latest
+    outputs:
+      GOFLAGS: ${{ steps.goflags.outputs.GOFLAGS }}
+      VERSION: ${{ steps.version.outputs.VERSION }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set build flags
+        id: goflags
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            echo "GOFLAGS='-ldflags=-w -s -X main.version=${VERSION}'" >> $GITHUB_OUTPUT
+          else
+            echo "GOFLAGS='-ldflags=-w -s'" >> $GITHUB_OUTPUT
+          fi
+      - name: Set version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=dev-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          fi
+
   build:
     runs-on: ubuntu-latest
+    needs: setup-environment
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: windows
+            arch: amd64
+          - os: windows
+            arch: arm64
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+    env:
+      GOFLAGS: ${{ needs.setup-environment.outputs.GOFLAGS }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -17,59 +63,89 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.21"
+          go-version-file: go.mod  # 从 go.mod 读取版本
 
       - name: Cache Dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
       - name: Create Output Directory
-        run: mkdir -p bin
+        run: mkdir -p dist
 
-      - name: Build Binaries
+      - name: Build Binary
         run: |
-          for arch in amd64 arm64; do
-            GOOS=linux GOARCH=$arch go build -o "bin/dirstats-linux-$arch" ./cmd/dirstats/main.go
-          done
+          BINARY_NAME="dirstats"
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            BINARY_NAME="${BINARY_NAME}.exe"
+          fi
+          
+          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build \
+            -o "dist/dirstats-${{ matrix.os }}-${{ matrix.arch }}${BINARY_NAME##dirstats}" \
+            ./cmd/dirstats/main.go
+        env:
+          CGO_ENABLED: 0
 
-      - name: Upload Artifact
+      - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dirstats-binaries
-          path: bin/*
+          name: build-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+          retention-days: 1
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [setup-environment, build]
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: build-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Display structure of downloaded files
+        run: ls -la dist/
 
       - name: Create Release
-        id: create_release  # 添加 ID
-        uses: actions/create-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Release ${{ needs.setup-environment.outputs.VERSION }}"
+          files: dist/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}  # 修改这里
-          release_name: "Release ${{ github.ref_name }}"
 
-      - name: Upload Release Assets (AMD64)
-        uses: actions/upload-release-asset@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # 非 tag 构建时上传 artifacts
+  upload-artifacts:
+    runs-on: ubuntu-latest
+    needs: [setup-environment, build]
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    steps:
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: bin/dirstats-linux-amd64
-          asset_name: dirstats-linux-amd64
-          asset_content_type: application/octet-stream
+          pattern: build-*
+          path: dist/
+          merge-multiple: true
 
-      - name: Upload Release Assets (ARM64)
-        uses: actions/upload-release-asset@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload Combined Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: bin/dirstats-linux-arm64
-          asset_name: dirstats-linux-arm64
-          asset_content_type: application/octet-stream
+          name: dirstats-binaries-${{ needs.setup-environment.outputs.VERSION }}
+          path: dist/*
+          retention-days: 30
