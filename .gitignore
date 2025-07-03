@@ -30,3 +30,7 @@ build/
 # temp
 tmp/
 temp/
+
+# idea
+.idea
+.vscode
